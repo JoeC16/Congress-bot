@@ -35,7 +35,7 @@ def is_new_trade(trade_id):
 def fetch_recent_trades():
     if not QUANT_API_KEY:
         raise ValueError("❌ QUANT_API_KEY is missing.")
-    
+
     headers = {"Authorization": f"Bearer {QUANT_API_KEY}"}
     print("➡️ Fetching trades from:", TRADING_ENDPOINT)
     print("➡️ Headers:", headers)
@@ -76,10 +76,10 @@ def is_high_potential(trade, bonus_tickers):
     ticker = trade.get("Ticker", "").upper()
 
     # ✅ Catch all trades regardless of size
-big_trade = any(x in amount for x in [
-    "$1,001", "$1,001 - $15,000", "$15,001 - $50,000", "$50,001 - $100,000",
-    "$100,001 - $250,000", "$250,001 - $500,000", "$500,001 - $1,000,000", "Over $1,000,000"
-])
+    big_trade = any(x in amount for x in [
+        "$1,001", "$1,001 - $15,000", "$15,001 - $50,000", "$50,001 - $100,000",
+        "$100,001 - $250,000", "$250,001 - $500,000", "$500,001 - $1,000,000", "Over $1,000,000"
+    ])
     good_sector = any(x in sector for x in ["tech", "energy", "defense", "semiconductor"])
     good_asset = "stock" in asset_type or asset_type == ""
     strong_ticker = ticker in ["MSFT", "AAPL", "GOOGL", "NVDA", "AMZN", "LMT", "XOM", "RTX"]
@@ -117,7 +117,7 @@ def main():
 
     try:
         trades = fetch_recent_trades()
-print(f"🔍 Total trades fetched: {len(trades)}")
+        print(f"🔍 Total trades fetched: {len(trades)}")
         print(f"✅ Fetched {len(trades)} trades")
 
         bonus_tickers = get_recent_contract_tickers()
@@ -127,23 +127,23 @@ print(f"🔍 Total trades fetched: {len(trades)}")
 
         matches = 0
         for trade in trades:
-    print(f"\n👀 Checking trade: {trade['Representative']} | {trade['Ticker']} | {trade['Amount']} | {trade.get('AssetType', '')} | Sector: {trade.get('Sector', 'N/A')}")
+            print(f"\n👀 Checking trade: {trade['Representative']} | {trade['Ticker']} | {trade['Amount']} | {trade.get('AssetType', '')} | Sector: {trade.get('Sector', 'N/A')}")
 
-    trade_id = f"{trade['Representative']}-{trade['TransactionDate']}-{trade['Ticker']}"
+            trade_id = f"{trade['Representative']}-{trade['TransactionDate']}-{trade['Ticker']}"
 
-    if is_new_trade(trade_id):
-        high_potential, is_bonus = is_high_potential(trade, bonus_tickers)
-        print(f"➡️ High potential? {high_potential} | Bonus: {is_bonus}")
+            if is_new_trade(trade_id):
+                high_potential, is_bonus = is_high_potential(trade, bonus_tickers)
+                print(f"➡️ High potential? {high_potential} | Bonus: {is_bonus}")
 
-        if high_potential:
-            msg = format_trade(trade, bonus=is_bonus)
-            bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
-            print("✅ Telegram alert sent.")
-        else:
-            print("⏭️ Skipped – did not meet criteria.")
-    else:
-        print("⏭️ Skipped – already posted before.")
+                if high_potential:
+                    msg = format_trade(trade, bonus=is_bonus)
+                    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
+                    print("✅ Telegram alert sent.")
                     matches += 1
+                else:
+                    print("⏭️ Skipped – did not meet criteria.")
+            else:
+                print("⏭️ Skipped – already posted before.")
 
         if matches == 0:
             print("⚠️ No high-potential trades found in this cycle.")
