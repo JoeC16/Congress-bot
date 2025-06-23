@@ -9,8 +9,8 @@ QUANT_API_KEY = os.getenv("QUANT_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-TRADING_ENDPOINT = "https://api.quiverquant.com/beta/historical/congresstrading"
-CONTRACTS_ENDPOINT = "https://api.quiverquant.com/beta/historical/govcontractsall"
+TRADING_ENDPOINT = "https://api.quiverquant.com/beta/historical/congresstrading/"
+CONTRACTS_ENDPOINT = "https://api.quiverquant.com/beta/historical/govcontractsall/"
 DB_FILE = "posted_trades.db"
 
 # --- DB Setup ---
