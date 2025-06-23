@@ -117,6 +117,7 @@ def main():
 
     try:
         trades = fetch_recent_trades()
+print(f"🔍 Total trades fetched: {len(trades)}")
         print(f"✅ Fetched {len(trades)} trades")
 
         bonus_tickers = get_recent_contract_tickers()
@@ -126,12 +127,22 @@ def main():
 
         matches = 0
         for trade in trades:
-            trade_id = f"{trade['Representative']}-{trade['TransactionDate']}-{trade['Ticker']}"
-            if is_new_trade(trade_id):
-                high_potential, is_bonus = is_high_potential(trade, bonus_tickers)
-                if high_potential:
-                    msg = format_trade(trade, bonus=is_bonus)
-                    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
+    print(f"\n👀 Checking trade: {trade['Representative']} | {trade['Ticker']} | {trade['Amount']} | {trade.get('AssetType', '')} | Sector: {trade.get('Sector', 'N/A')}")
+
+    trade_id = f"{trade['Representative']}-{trade['TransactionDate']}-{trade['Ticker']}"
+
+    if is_new_trade(trade_id):
+        high_potential, is_bonus = is_high_potential(trade, bonus_tickers)
+        print(f"➡️ High potential? {high_potential} | Bonus: {is_bonus}")
+
+        if high_potential:
+            msg = format_trade(trade, bonus=is_bonus)
+            bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
+            print("✅ Telegram alert sent.")
+        else:
+            print("⏭️ Skipped – did not meet criteria.")
+    else:
+        print("⏭️ Skipped – already posted before.")
                     matches += 1
 
         if matches == 0:
