@@ -75,7 +75,11 @@ def is_high_potential(trade, bonus_tickers):
     asset_type = trade.get("AssetType", "").lower()
     ticker = trade.get("Ticker", "").upper()
 
-    big_trade = any(x in amount for x in ["$15,001", "$50,000", "$100,000", "$250,000", "$500,000"])
+    # ✅ Catch all trades regardless of size
+big_trade = any(x in amount for x in [
+    "$1,001", "$1,001 - $15,000", "$15,001 - $50,000", "$50,001 - $100,000",
+    "$100,001 - $250,000", "$250,001 - $500,000", "$500,001 - $1,000,000", "Over $1,000,000"
+])
     good_sector = any(x in sector for x in ["tech", "energy", "defense", "semiconductor"])
     good_asset = "stock" in asset_type or asset_type == ""
     strong_ticker = ticker in ["MSFT", "AAPL", "GOOGL", "NVDA", "AMZN", "LMT", "XOM", "RTX"]
