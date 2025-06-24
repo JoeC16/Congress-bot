@@ -16,7 +16,7 @@ DB_FILE = "posted_trades.db"
 # --- DB Setup ---
 def init_db():
     if os.path.exists(DB_FILE):
-        os.remove(DB_FILE)  # ❌ wipe old DB
+        os.remove(DB_FILE)  # wipe on start
     conn = sqlite3.connect(DB_FILE)
     conn.execute("CREATE TABLE IF NOT EXISTS trades (id TEXT PRIMARY KEY)")
     conn.commit()
@@ -33,15 +33,11 @@ def is_new_trade(trade_id):
     conn.close()
     return not exists
 
-# --- API Fetching ---
+# --- Fetch from QuiverQuant ---
 def fetch_recent_trades():
-    if not QUANT_API_KEY:
-        raise ValueError("❌ QUANT_API_KEY is missing.")
     headers = {"Authorization": f"Bearer {QUANT_API_KEY}"}
     r = requests.get(TRADING_ENDPOINT, headers=headers)
-    if r.status_code != 200:
-        print(f"❌ Trade fetch failed: {r.status_code} - {r.text}")
-        r.raise_for_status()
+    r.raise_for_status()
     return r.json()
 
 def fetch_recent_contracts():
@@ -52,23 +48,23 @@ def fetch_recent_contracts():
 
 def get_recent_contract_tickers(days=7):
     data = fetch_recent_contracts()
-    recent_tickers = set()
+    tickers = set()
     cutoff = datetime.utcnow() - timedelta(days=days)
     for item in data:
         try:
+            contract_date = datetime.strptime(item["Date"], "%Y-%m-%dT%H:%M:%S")
+        except ValueError:
             try:
-                contract_date = datetime.strptime(item["Date"], "%Y-%m-%dT%H:%M:%S")
-            except ValueError:
                 contract_date = datetime.strptime(item["Date"], "%Y-%m-%d")
-            if contract_date >= cutoff:
-                ticker = item.get("Ticker", "").upper()
-                if ticker:
-                    recent_tickers.add(ticker)
-        except:
-            continue
-    return recent_tickers
+            except:
+                continue
+        if contract_date >= cutoff:
+            ticker = item.get("Ticker", "").upper()
+            if ticker:
+                tickers.add(ticker)
+    return tickers
 
-# --- Trade Scoring ---
+# --- Scoring System ---
 def score_trade(trade, bonus_tickers):
     try:
         amount = trade.get("Amount", "")
@@ -82,8 +78,7 @@ def score_trade(trade, bonus_tickers):
         except ValueError:
             filed_date = datetime.strptime(filed_raw, "%Y-%m-%d")
 
-        recent = filed_date >= datetime.utcnow() - timedelta(days=7)
-        if not recent:
+        if filed_date < datetime.utcnow() - timedelta(days=7):
             return 0
 
         score = 0
@@ -103,7 +98,7 @@ def score_trade(trade, bonus_tickers):
         print(f"⚠️ Scoring error: {e}")
         return 0
 
-# --- Message Format ---
+# --- Formatter ---
 def format_trade(trade, bonus=False):
     name = trade.get("Name", "Unknown")
     ticker = trade.get("Ticker", "N/A")
@@ -112,19 +107,19 @@ def format_trade(trade, bonus=False):
     link = f"https://www.quiverquant.com/congresstrading/{ticker.upper()}"
 
     msg = (
-        f"🚨 New Congressional Trade Alert\n\n"
-        f"👤 {name}\n"
+        f"<b>🚨 New Congressional Trade Alert</b>\n\n"
+        f"👤 <b>{name}</b>\n"
         f"📅 Filed: {date}\n"
-        f"💼 Bought: {amount} of ${ticker.upper()}\n"
-        f"📍 View: {link}\n"
+        f"💼 Bought: {amount} of <b>${ticker.upper()}</b>\n"
+        f"🔗 <a href='{link}'>View on QuiverQuant</a>\n"
     )
     if bonus:
-        msg += "\n💥 BONUS: This company also received a recent government contract.\n"
+        msg += "\n💥 <i>BONUS: This company received a recent government contract.</i>\n"
 
-    msg += "\n🔍 Trade ranked as high-potential based on timing, size, sector, and contracts."
+    msg += "\n🔍 <i>Ranked as high-potential based on timing, size, sector & contracts.</i>"
     return msg
 
-# --- Main Bot Logic ---
+# --- Main ---
 def main():
     print("🟢 Congress Bot Starting...")
     init_db()
@@ -134,38 +129,30 @@ def main():
         bonus_tickers = get_recent_contract_tickers()
         bot = Bot(token=TELEGRAM_TOKEN)
 
-        scored_trades = []
+        scored = []
         for trade in trades:
             score = score_trade(trade, bonus_tickers)
             if score > 0:
                 trade["score"] = score
-                scored_trades.append(trade)
+                scored.append(trade)
 
-        if not scored_trades:
-            print("⚠️ No trades scored above zero.")
-            return
+        top = sorted(scored, key=lambda x: x["score"], reverse=True)[:5]
 
-        top_trades = sorted(scored_trades, key=lambda x: x["score"], reverse=True)[:5]
-
-        print("\n📊 Top 5 Ranked Trades This Week:\n" + "-" * 40)
-        for i, trade in enumerate(top_trades, 1):
-            trade_id = f"{trade.get('Name', 'Unknown')}-{trade.get('Traded', 'unknown')}-{trade.get('Ticker', 'N/A')}"
-            msg = format_trade(trade, bonus=(trade.get("Ticker", "").upper() in bonus_tickers))
-
-            print(f"\n#{i}: {trade_id}")
-            print(msg)
-
+        for i, trade in enumerate(top, 1):
+            trade_id = f"{trade.get('Name')}-{trade.get('Traded')}-{trade.get('Ticker')}"
             if is_new_trade(trade_id):
-                try:
-                    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
-                    print("✅ Telegram alert sent.")
-                except Exception as te:
-                    print(f"❌ Telegram send error: {te}")
+                msg = format_trade(trade, bonus=(trade.get("Ticker", "").upper() in bonus_tickers))
+                print(f"📤 Sending Telegram alert:\n#{i}: {msg}\n")
+                bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode="HTML", disable_web_page_preview=True)
+                print(f"✅ Telegram alert sent for {trade_id}")
             else:
-                print("⏭️ Already sent.")
+                print(f"⏭️ Already sent: {trade_id}")
+
+        if not top:
+            print("⚠️ No trades ranked high enough this week.")
 
     except Exception as e:
-        print(f"❌ MAIN ERROR: {e}")
+        print(f"❌ ERROR: {e}")
 
 if __name__ == "__main__":
     main()
