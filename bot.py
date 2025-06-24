@@ -156,12 +156,6 @@ def main():
                 print(f"⚠️ Error processing trade: {trade}")
                 print(f"❌ Exception: {e}")
 
-            trade_id = f"{trade['Representative']}-{trade['TransactionDate']}-{trade['Ticker']}"
-
-            if is_new_trade(trade_id):
-                high_potential, is_bonus = is_high_potential(trade, bonus_tickers)
-                print(f"➡️ High potential? {high_potential} | Bonus: {is_bonus}")
-
                 if high_potential:
                     msg = format_trade(trade, bonus=is_bonus)
                     bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
