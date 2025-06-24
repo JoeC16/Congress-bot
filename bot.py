@@ -56,16 +56,16 @@ def get_recent_contract_tickers(days=7):
     cutoff = datetime.utcnow() - timedelta(days=days)
     for item in data:
         try:
-            contract_date = datetime.strptime(item["Date"], "%Y-%m-%dT%H:%M:%S")
-        except ValueError:
             try:
+                contract_date = datetime.strptime(item["Date"], "%Y-%m-%dT%H:%M:%S")
+            except ValueError:
                 contract_date = datetime.strptime(item["Date"], "%Y-%m-%d")
-            except:
-                continue
-        if contract_date >= cutoff:
-            ticker = item.get("Ticker", "").upper()
-            if ticker:
-                recent_tickers.add(ticker)
+            if contract_date >= cutoff:
+                ticker = item.get("Ticker", "").upper()
+                if ticker:
+                    recent_tickers.add(ticker)
+        except:
+            continue
     return recent_tickers
 
 # --- Trade Scoring ---
@@ -84,7 +84,7 @@ def score_trade(trade, bonus_tickers):
 
         recent = filed_date >= datetime.utcnow() - timedelta(days=7)
         if not recent:
-            return 0  # skip old trades
+            return 0
 
         score = 0
         if not amount.startswith("$1,000 or less"):
@@ -103,6 +103,7 @@ def score_trade(trade, bonus_tickers):
         print(f"⚠️ Scoring error: {e}")
         return 0
 
+# --- Message Format ---
 def format_trade(trade, bonus=False):
     name = trade.get("Name", "Unknown")
     ticker = trade.get("Ticker", "N/A")
@@ -135,31 +136,36 @@ def main():
 
         scored_trades = []
         for trade in trades:
-            try:
-                score = score_trade(trade, bonus_tickers)
-                if score > 0:
-                    trade["score"] = score
-                    scored_trades.append(trade)
-            except Exception as e:
-                print(f"⚠️ Error processing trade: {e}")
+            score = score_trade(trade, bonus_tickers)
+            if score > 0:
+                trade["score"] = score
+                scored_trades.append(trade)
 
-        # Sort and take top 5
+        if not scored_trades:
+            print("⚠️ No trades scored above zero.")
+            return
+
         top_trades = sorted(scored_trades, key=lambda x: x["score"], reverse=True)[:5]
 
-        for trade in top_trades:
+        print("\n📊 Top 5 Ranked Trades This Week:\n" + "-" * 40)
+        for i, trade in enumerate(top_trades, 1):
             trade_id = f"{trade.get('Name', 'Unknown')}-{trade.get('Traded', 'unknown')}-{trade.get('Ticker', 'N/A')}"
-            if is_new_trade(trade_id):
-                msg = format_trade(trade, bonus=(trade.get("Ticker", "").upper() in bonus_tickers))
-                bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
-                print("✅ Sent trade alert:", trade_id)
-            else:
-                print("⏭️ Already sent:", trade_id)
+            msg = format_trade(trade, bonus=(trade.get("Ticker", "").upper() in bonus_tickers))
 
-        if not top_trades:
-            print("⚠️ No trades ranked high enough this week.")
+            print(f"\n#{i}: {trade_id}")
+            print(msg)
+
+            if is_new_trade(trade_id):
+                try:
+                    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
+                    print("✅ Telegram alert sent.")
+                except Exception as te:
+                    print(f"❌ Telegram send error: {te}")
+            else:
+                print("⏭️ Already sent.")
 
     except Exception as e:
-        print(f"❌ ERROR: {e}")
+        print(f"❌ MAIN ERROR: {e}")
 
 if __name__ == "__main__":
     main()
