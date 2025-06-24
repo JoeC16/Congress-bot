@@ -8,7 +8,7 @@ from telegram import Bot
 # --- Config ---
 QUANT_API_KEY = os.getenv("QUANT_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = "1430731878"  # Send to your personal chat
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")  # Set this to your personal chat ID (e.g. 1430731878)
 
 TRADING_ENDPOINT = "https://api.quiverquant.com/beta/bulk/congresstrading"
 CONTRACTS_ENDPOINT = "https://api.quiverquant.com/beta/live/govcontractsall"
@@ -34,7 +34,7 @@ def is_new_trade(trade_id):
     conn.close()
     return not exists
 
-# --- Strip HTML for Telegram compatibility ---
+# --- Strip HTML for Telegram personal chat compatibility ---
 def strip_html_tags(text):
     return re.sub('<[^<]+?>', '', text)
 
@@ -148,7 +148,10 @@ def main():
             if is_new_trade(trade_id):
                 raw_msg = format_trade(trade, bonus=(trade.get("Ticker", "").upper() in bonus_tickers))
                 plain_msg = strip_html_tags(raw_msg)
-                print(f"📤 Sending Telegram alert:\n#{i}: {plain_msg}\n")
+
+                print(f"📤 Sending Telegram alert #{i} to {TELEGRAM_CHAT_ID}")
+                print(plain_msg)
+
                 bot.send_message(
                     chat_id=TELEGRAM_CHAT_ID,
                     text=plain_msg,
