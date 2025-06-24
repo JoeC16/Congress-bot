@@ -123,6 +123,7 @@ def main():
         trades = fetch_recent_trades()
         bonus_tickers = get_recent_contract_tickers()
         bot = Bot(token=TELEGRAM_TOKEN)
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="👋 Bot is running.", parse_mode=None)
 
         scored = []
         for trade in trades:
