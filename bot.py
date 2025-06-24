@@ -57,12 +57,15 @@ def get_recent_contract_tickers(days=7):
     for item in data:
         try:
             contract_date = datetime.strptime(item["Date"], "%Y-%m-%dT%H:%M:%S")
-            if contract_date >= cutoff:
-                ticker = item.get("Ticker", "").upper()
-                if ticker:
-                    recent_tickers.add(ticker)
-        except:
-            continue
+        except ValueError:
+            try:
+                contract_date = datetime.strptime(item["Date"], "%Y-%m-%d")
+            except:
+                continue
+        if contract_date >= cutoff:
+            ticker = item.get("Ticker", "").upper()
+            if ticker:
+                recent_tickers.add(ticker)
     return recent_tickers
 
 # --- Trade Scoring ---
@@ -72,14 +75,18 @@ def score_trade(trade, bonus_tickers):
         sector = trade.get("Sector", "").lower()
         asset_type = trade.get("AssetType", "").lower()
         ticker = trade.get("Ticker", "").upper()
-        filed_date = datetime.strptime(trade.get("Filed", ""), "%Y-%m-%dT%H:%M:%S")
+        filed_raw = trade.get("Filed", "")
+
+        try:
+            filed_date = datetime.strptime(filed_raw, "%Y-%m-%dT%H:%M:%S")
+        except ValueError:
+            filed_date = datetime.strptime(filed_raw, "%Y-%m-%d")
 
         recent = filed_date >= datetime.utcnow() - timedelta(days=7)
         if not recent:
             return 0  # skip old trades
 
         score = 0
-
         if not amount.startswith("$1,000 or less"):
             score += 1
         if any(x in sector for x in ["tech", "energy", "defense", "semiconductor"]):
