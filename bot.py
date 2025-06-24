@@ -35,11 +35,7 @@ def is_new_trade(trade_id):
 def fetch_recent_trades():
     if not QUANT_API_KEY:
         raise ValueError("❌ QUANT_API_KEY is missing.")
-
     headers = {"Authorization": f"Bearer {QUANT_API_KEY}"}
-    print("➡️ Fetching trades from:", TRADING_ENDPOINT)
-    print("➡️ Headers:", headers)
-
     r = requests.get(TRADING_ENDPOINT, headers=headers)
     if r.status_code != 200:
         print(f"❌ Trade fetch failed: {r.status_code} - {r.text}")
@@ -56,7 +52,6 @@ def get_recent_contract_tickers(days=7):
     data = fetch_recent_contracts()
     recent_tickers = set()
     cutoff = datetime.utcnow() - timedelta(days=days)
-
     for item in data:
         try:
             contract_date = datetime.strptime(item["Date"], "%Y-%m-%dT%H:%M:%S")
@@ -70,31 +65,32 @@ def get_recent_contract_tickers(days=7):
 
 # --- Trade Analysis ---
 def is_high_potential(trade, bonus_tickers):
-    amount = trade.get("Amount", "")
-    sector = trade.get("Sector", "").lower() if trade.get("Sector") else ""
-    asset_type = trade.get("AssetType", "").lower()
-    ticker = trade.get("Ticker", "").upper()
+    try:
+        amount = trade.get("Amount", "")
+        sector = trade.get("Sector", "").lower()
+        asset_type = trade.get("AssetType", "").lower()
+        ticker = trade.get("Ticker", "").upper()
+        filed_date = datetime.strptime(trade.get("Filed", ""), "%Y-%m-%dT%H:%M:%S")
 
-    # ✅ Catch all trades regardless of size
-    big_trade = any(x in amount for x in [
-        "$1,001", "$1,001 - $15,000", "$15,001 - $50,000", "$50,001 - $100,000",
-        "$100,001 - $250,000", "$250,001 - $500,000", "$500,001 - $1,000,000", "Over $1,000,000"
-    ])
-    good_sector = any(x in sector for x in ["tech", "energy", "defense", "semiconductor"])
-    good_asset = "stock" in asset_type or asset_type == ""
-    strong_ticker = ticker in ["MSFT", "AAPL", "GOOGL", "NVDA", "AMZN", "LMT", "XOM", "RTX"]
+        big_trade = any(x in amount for x in [
+            "$1,001", "$1,001 - $15,000", "$15,001 - $50,000", "$50,001 - $100,000",
+            "$100,001 - $250,000", "$250,001 - $500,000", "$500,001 - $1,000,000", "Over $1,000,000"
+        ])
+        good_sector = any(x in sector for x in ["tech", "energy", "defense", "semiconductor"])
+        good_asset = "stock" in asset_type or asset_type == ""
+        strong_ticker = ticker in ["MSFT", "AAPL", "GOOGL", "NVDA", "AMZN", "LMT", "XOM", "RTX"]
+        recent = filed_date >= datetime.utcnow() - timedelta(days=2)
+        is_bonus = ticker in bonus_tickers
 
-    filed_date = datetime.strptime(trade["ReportDate"], "%Y-%m-%dT%H:%M:%S")
-    recent = filed_date >= datetime.utcnow() - timedelta(days=2)
-    is_bonus = ticker in bonus_tickers
-
-    return recent and big_trade and (good_sector or strong_ticker or is_bonus) and good_asset, is_bonus
+        return recent and big_trade and (good_sector or strong_ticker or is_bonus) and good_asset, is_bonus
+    except:
+        return False, False
 
 def format_trade(trade, bonus=False):
-    name = trade["Representative"]
-    ticker = trade["Ticker"]
-    date = trade["ReportDate"][:10]
-    amount = trade["Amount"]
+    name = trade.get("Name", "Unknown")
+    ticker = trade.get("Ticker", "N/A")
+    date = trade.get("Filed", "")[:10]
+    amount = trade.get("Amount", "N/A")
     link = f"https://www.quiverquant.com/congresstrading/{ticker.upper()}"
 
     msg = (
@@ -117,27 +113,22 @@ def main():
 
     try:
         trades = fetch_recent_trades()
-        print(f"🔍 Total trades fetched: {len(trades)}")
-        print(f"✅ Fetched {len(trades)} trades")
-
         bonus_tickers = get_recent_contract_tickers()
-        print(f"📊 {len(bonus_tickers)} tickers received recent government contracts")
-
         bot = Bot(token=TELEGRAM_TOKEN)
 
         matches = 0
         for trade in trades:
             try:
-                name = trade.get("Representative", "Unknown")
+                name = trade.get("Name", "Unknown")
                 ticker = trade.get("Ticker", "N/A")
                 amount = trade.get("Amount", "N/A")
                 asset_type = trade.get("AssetType", "")
                 sector = trade.get("Sector", "N/A")
-                report_date = trade.get("ReportDate", "N/A")
+                filed = trade.get("Filed", "Unknown")
 
                 print(f"\n👀 Checking trade: {name} | {ticker} | {amount} | {asset_type} | Sector: {sector}")
 
-                trade_id = f"{name}-{trade.get('TransactionDate', 'unknown')}-{ticker}"
+                trade_id = f"{name}-{trade.get('Traded', 'unknown')}-{ticker}"
 
                 if is_new_trade(trade_id):
                     high_potential, is_bonus = is_high_potential(trade, bonus_tickers)
@@ -156,16 +147,6 @@ def main():
             except Exception as e:
                 print(f"⚠️ Error processing trade: {trade}")
                 print(f"❌ Exception: {e}")
-        
-                if high_potential:
-                    msg = format_trade(trade, bonus=is_bonus)
-                    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
-                    print("✅ Telegram alert sent.")
-                    matches += 1
-                else:
-                    print("⏭️ Skipped – did not meet criteria.")
-            else:
-                print("⏭️ Skipped – already posted before.")
 
         if matches == 0:
             print("⚠️ No high-potential trades found in this cycle.")
