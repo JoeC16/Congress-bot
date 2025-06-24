@@ -7,17 +7,16 @@ from telegram import Bot
 
 # --- Config ---
 QUANT_API_KEY = os.getenv("QUANT_API_KEY")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")  # Set this to your personal chat ID (e.g. 1430731878)
+TELEGRAM_TOKEN = "7646276926:AAFGQM8obLQOXyi7utxxPCEhHig4F24Yzh0"
+TELEGRAM_CHAT_ID = 1430731878  # 🔒 Replace with exact chat_id from getUpdates
 
 TRADING_ENDPOINT = "https://api.quiverquant.com/beta/bulk/congresstrading"
 CONTRACTS_ENDPOINT = "https://api.quiverquant.com/beta/live/govcontractsall"
 DB_FILE = "posted_trades.db"
 
-# --- DB Setup ---
 def init_db():
     if os.path.exists(DB_FILE):
-        os.remove(DB_FILE)  # wipe on start
+        os.remove(DB_FILE)
     conn = sqlite3.connect(DB_FILE)
     conn.execute("CREATE TABLE IF NOT EXISTS trades (id TEXT PRIMARY KEY)")
     conn.commit()
@@ -34,11 +33,9 @@ def is_new_trade(trade_id):
     conn.close()
     return not exists
 
-# --- Strip HTML for Telegram personal chat compatibility ---
 def strip_html_tags(text):
     return re.sub('<[^<]+?>', '', text)
 
-# --- Fetch from QuiverQuant ---
 def fetch_recent_trades():
     headers = {"Authorization": f"Bearer {QUANT_API_KEY}"}
     r = requests.get(TRADING_ENDPOINT, headers=headers)
@@ -69,7 +66,6 @@ def get_recent_contract_tickers(days=7):
                 tickers.add(ticker)
     return tickers
 
-# --- Scoring System ---
 def score_trade(trade, bonus_tickers):
     try:
         amount = trade.get("Amount", "")
@@ -103,7 +99,6 @@ def score_trade(trade, bonus_tickers):
         print(f"⚠️ Scoring error: {e}")
         return 0
 
-# --- Formatter ---
 def format_trade(trade, bonus=False):
     name = trade.get("Name", "Unknown")
     ticker = trade.get("Ticker", "N/A")
@@ -112,21 +107,19 @@ def format_trade(trade, bonus=False):
     link = f"https://www.quiverquant.com/congresstrading/{ticker.upper()}"
 
     msg = (
-        f"<b>🚨 New Congressional Trade Alert</b>\n\n"
+        f"🚨 <b>New Congressional Trade</b>\n"
         f"👤 <b>{name}</b>\n"
-        f"📅 Filed: {date}\n"
-        f"💼 Bought: {amount} of <b>${ticker.upper()}</b>\n"
-        f"🔗 <a href='{link}'>View on QuiverQuant</a>\n"
+        f"📅 <b>Filed:</b> {date}\n"
+        f"💼 <b>Trade:</b> {amount} of <b>${ticker}</b>\n"
+        f"🔗 <a href='{link}'>View on QuiverQuant</a>"
     )
-    if bonus:
-        msg += "\n💥 <i>BONUS: This company received a recent government contract.</i>\n"
 
-    msg += "\n🔍 <i>Ranked as high-potential based on timing, size, sector & contracts.</i>"
+    if bonus:
+        msg += "\n💥 <i>BONUS: This company received a recent government contract.</i>"
     return msg
 
-# --- Main ---
 def main():
-    print("🟢 Congress Bot Starting...")
+    print("🟢 Congress Bot Running...")
     init_db()
 
     try:
@@ -146,24 +139,20 @@ def main():
         for i, trade in enumerate(top, 1):
             trade_id = f"{trade.get('Name')}-{trade.get('Traded')}-{trade.get('Ticker')}"
             if is_new_trade(trade_id):
-                raw_msg = format_trade(trade, bonus=(trade.get("Ticker", "").upper() in bonus_tickers))
-                plain_msg = strip_html_tags(raw_msg)
-
-                print(f"📤 Sending Telegram alert #{i} to {TELEGRAM_CHAT_ID}")
-                print(plain_msg)
-
+                msg = strip_html_tags(format_trade(trade, trade.get("Ticker", "").upper() in bonus_tickers))
+                print(f"📤 Sending: {msg}")
                 bot.send_message(
                     chat_id=TELEGRAM_CHAT_ID,
-                    text=plain_msg,
+                    text=msg,
                     parse_mode=None,
                     disable_web_page_preview=True
                 )
-                print(f"✅ Telegram alert sent for {trade_id}")
+                print(f"✅ Sent to Telegram: {trade_id}")
             else:
                 print(f"⏭️ Already sent: {trade_id}")
 
         if not top:
-            print("⚠️ No trades ranked high enough this week.")
+            print("⚠️ No high-scoring trades found.")
 
     except Exception as e:
         print(f"❌ ERROR: {e}")
