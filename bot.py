@@ -65,8 +65,8 @@ def get_recent_contract_tickers(days=7):
             continue
     return recent_tickers
 
-# --- Trade Analysis ---
-def is_high_potential(trade, bonus_tickers):
+# --- Trade Scoring ---
+def score_trade(trade, bonus_tickers):
     try:
         amount = trade.get("Amount", "")
         sector = trade.get("Sector", "").lower()
@@ -74,18 +74,27 @@ def is_high_potential(trade, bonus_tickers):
         ticker = trade.get("Ticker", "").upper()
         filed_date = datetime.strptime(trade.get("Filed", ""), "%Y-%m-%dT%H:%M:%S")
 
-        # Looser filter: ignore trades under $1,000
-        acceptable_amount = amount and not amount.startswith("$1,000 or less")
-
-        good_sector = any(x in sector for x in ["tech", "energy", "defense", "semiconductor"])
-        good_asset = "stock" in asset_type or asset_type == ""
-        strong_ticker = ticker in ["MSFT", "AAPL", "GOOGL", "NVDA", "AMZN", "LMT", "XOM", "RTX"]
         recent = filed_date >= datetime.utcnow() - timedelta(days=7)
-        is_bonus = ticker in bonus_tickers
+        if not recent:
+            return 0  # skip old trades
 
-        return recent and acceptable_amount and (good_sector or strong_ticker or is_bonus) and good_asset, is_bonus
-    except:
-        return False, False
+        score = 0
+
+        if not amount.startswith("$1,000 or less"):
+            score += 1
+        if any(x in sector for x in ["tech", "energy", "defense", "semiconductor"]):
+            score += 1
+        if "stock" in asset_type or asset_type == "":
+            score += 1
+        if ticker in ["MSFT", "AAPL", "GOOGL", "NVDA", "AMZN", "LMT", "XOM", "RTX"]:
+            score += 1
+        if ticker in bonus_tickers:
+            score += 2
+
+        return score
+    except Exception as e:
+        print(f"⚠️ Scoring error: {e}")
+        return 0
 
 def format_trade(trade, bonus=False):
     name = trade.get("Name", "Unknown")
@@ -104,7 +113,7 @@ def format_trade(trade, bonus=False):
     if bonus:
         msg += "\n💥 BONUS: This company also received a recent government contract.\n"
 
-    msg += "\n🔍 High-potential trade detected based on size, sector, or federal funding profile."
+    msg += "\n🔍 Trade ranked as high-potential based on timing, size, sector, and contracts."
     return msg
 
 # --- Main Bot Logic ---
@@ -117,40 +126,30 @@ def main():
         bonus_tickers = get_recent_contract_tickers()
         bot = Bot(token=TELEGRAM_TOKEN)
 
-        matches = 0
+        scored_trades = []
         for trade in trades:
             try:
-                name = trade.get("Name", "Unknown")
-                ticker = trade.get("Ticker", "N/A")
-                amount = trade.get("Amount", "N/A")
-                asset_type = trade.get("AssetType", "")
-                sector = trade.get("Sector", "N/A")
-                filed = trade.get("Filed", "Unknown")
-
-                print(f"\n👀 Checking trade: {name} | {ticker} | {amount} | {asset_type} | Sector: {sector}")
-
-                trade_id = f"{name}-{trade.get('Traded', 'unknown')}-{ticker}"
-
-                if is_new_trade(trade_id):
-                    high_potential, is_bonus = is_high_potential(trade, bonus_tickers)
-                    print(f"➡️ High potential? {high_potential} | Bonus: {is_bonus}")
-
-                    if high_potential:
-                        msg = format_trade(trade, bonus=is_bonus)
-                        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
-                        print("✅ Telegram alert sent.")
-                        matches += 1
-                    else:
-                        print("⏭️ Skipped – did not meet criteria.")
-                else:
-                    print("⏭️ Skipped – already posted before.")
-
+                score = score_trade(trade, bonus_tickers)
+                if score > 0:
+                    trade["score"] = score
+                    scored_trades.append(trade)
             except Exception as e:
-                print(f"⚠️ Error processing trade: {trade}")
-                print(f"❌ Exception: {e}")
+                print(f"⚠️ Error processing trade: {e}")
 
-        if matches == 0:
-            print("⚠️ No high-potential trades found in this cycle.")
+        # Sort and take top 5
+        top_trades = sorted(scored_trades, key=lambda x: x["score"], reverse=True)[:5]
+
+        for trade in top_trades:
+            trade_id = f"{trade.get('Name', 'Unknown')}-{trade.get('Traded', 'unknown')}-{trade.get('Ticker', 'N/A')}"
+            if is_new_trade(trade_id):
+                msg = format_trade(trade, bonus=(trade.get("Ticker", "").upper() in bonus_tickers))
+                bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
+                print("✅ Sent trade alert:", trade_id)
+            else:
+                print("⏭️ Already sent:", trade_id)
+
+        if not top_trades:
+            print("⚠️ No trades ranked high enough this week.")
 
     except Exception as e:
         print(f"❌ ERROR: {e}")
