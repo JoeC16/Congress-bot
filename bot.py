@@ -7,7 +7,7 @@ from telegram import Bot
 
 # --- Config ---
 QUANT_API_KEY = os.getenv("QUANT_API_KEY")
-TELEGRAM_TOKEN = "7646276926:AAFGQM8obLQOXyi7utxxPCEhHig4F24Yzh0"
+TELEGRAM_TOKEN = "7888906888:AAFimQPh13dJqTm_ztbVndolUHbmHxOBhdE"  # ✅ New bot token
 TELEGRAM_CHAT_ID = 1430731878  # ✅ Your personal chat ID
 
 TRADING_ENDPOINT = "https://api.quiverquant.com/beta/bulk/congresstrading"
@@ -32,6 +32,9 @@ def is_new_trade(trade_id):
         conn.commit()
     conn.close()
     return not exists
+
+def strip_html_tags(text):
+    return re.sub('<[^<]+?>', '', text)
 
 def fetch_recent_trades():
     headers = {"Authorization": f"Bearer {QUANT_API_KEY}"}
@@ -120,10 +123,11 @@ def main():
     init_db()
 
     try:
-        trades = fetch_recent_trades()
-        bonus_tickers = get_recent_contract_tickers()
         bot = Bot(token=TELEGRAM_TOKEN)
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="👋 Bot is running.", parse_mode=None)
+
+        trades = fetch_recent_trades()
+        bonus_tickers = get_recent_contract_tickers()
 
         scored = []
         for trade in trades:
@@ -137,12 +141,12 @@ def main():
         for i, trade in enumerate(top, 1):
             trade_id = f"{trade.get('Name')}-{trade.get('Traded')}-{trade.get('Ticker')}"
             if is_new_trade(trade_id):
-                msg = format_trade(trade, trade.get("Ticker", "").upper() in bonus_tickers)
+                msg = strip_html_tags(format_trade(trade, trade.get("Ticker", "").upper() in bonus_tickers))
                 print(f"📤 Sending: {msg}")
                 bot.send_message(
                     chat_id=TELEGRAM_CHAT_ID,
                     text=msg,
-                    parse_mode='HTML',
+                    parse_mode=None,
                     disable_web_page_preview=True
                 )
                 print(f"✅ Sent to Telegram: {trade_id}")
