@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 import sqlite3
 from datetime import datetime, timedelta
@@ -32,6 +33,10 @@ def is_new_trade(trade_id):
         conn.commit()
     conn.close()
     return not exists
+
+# --- Strip HTML for Telegram compatibility ---
+def strip_html_tags(text):
+    return re.sub('<[^<]+?>', '', text)
 
 # --- Fetch from QuiverQuant ---
 def fetch_recent_trades():
@@ -141,9 +146,15 @@ def main():
         for i, trade in enumerate(top, 1):
             trade_id = f"{trade.get('Name')}-{trade.get('Traded')}-{trade.get('Ticker')}"
             if is_new_trade(trade_id):
-                msg = format_trade(trade, bonus=(trade.get("Ticker", "").upper() in bonus_tickers))
-                print(f"📤 Sending Telegram alert:\n#{i}: {msg}\n")
-                bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode="HTML", disable_web_page_preview=True)
+                raw_msg = format_trade(trade, bonus=(trade.get("Ticker", "").upper() in bonus_tickers))
+                plain_msg = strip_html_tags(raw_msg)
+                print(f"📤 Sending Telegram alert:\n#{i}: {plain_msg}\n")
+                bot.send_message(
+                    chat_id=TELEGRAM_CHAT_ID,
+                    text=plain_msg,
+                    parse_mode=None,
+                    disable_web_page_preview=True
+                )
                 print(f"✅ Telegram alert sent for {trade_id}")
             else:
                 print(f"⏭️ Already sent: {trade_id}")
