@@ -126,7 +126,7 @@ def main():
         bot = Bot(token=TELEGRAM_TOKEN)
 
         matches = 0
-                for trade in trades:
+        for trade in trades:
             try:
                 name = trade.get("Representative", "Unknown")
                 ticker = trade.get("Ticker", "N/A")
