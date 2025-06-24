@@ -127,7 +127,7 @@ def main():
 
         matches = 0
         for trade in trades:
-    try:
+            try:
         name = trade.get("Representative") or trade.get("Name", "Unknown")
         ticker = trade.get("Ticker", "N/A")
         amount = trade.get("Amount", "N/A")
