@@ -127,35 +127,39 @@ def main():
 
         matches = 0
         for trade in trades:
-            try:
-                name = trade.get("Representative", "Unknown")
-                ticker = trade.get("Ticker", "N/A")
-                amount = trade.get("Amount", "N/A")
-                asset_type = trade.get("AssetType", "")
-                sector = trade.get("Sector", "N/A")
+    try:
+        name = trade.get("Representative") or trade.get("Name", "Unknown")
+        ticker = trade.get("Ticker", "N/A")
+        amount = trade.get("Amount", "N/A")
+        asset_type = trade.get("AssetType", "")
+        sector = trade.get("Sector", "N/A")
+        report_date = trade.get("ReportDate") or trade.get("Filed", "")
 
-                print(f"\n👀 Checking trade: {name} | {ticker} | {amount} | {asset_type} | Sector: {sector}")
+        print(f"\n👀 Checking trade: {name} | {ticker} | {amount} | {asset_type} | Sector: {sector}")
 
-                trade_id = f"{name}-{trade.get('TransactionDate', 'unknown')}-{ticker}"
+        trade_id = f"{name}-{trade.get('TransactionDate', 'unknown')}-{ticker}"
 
-                if is_new_trade(trade_id):
-                    high_potential, is_bonus = is_high_potential(trade, bonus_tickers)
-                    print(f"➡️ High potential? {high_potential} | Bonus: {is_bonus}")
+        if is_new_trade(trade_id):
+            trade["ReportDate"] = report_date  # Inject for downstream logic
+            trade["Representative"] = name     # Inject for formatting
 
-                    if high_potential:
-                        msg = format_trade(trade, bonus=is_bonus)
-                        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
-                        print("✅ Telegram alert sent.")
-                        matches += 1
-                    else:
-                        print("⏭️ Skipped – did not meet criteria.")
-                else:
-                    print("⏭️ Skipped – already posted before.")
+            high_potential, is_bonus = is_high_potential(trade, bonus_tickers)
+            print(f"➡️ High potential? {high_potential} | Bonus: {is_bonus}")
 
-            except Exception as e:
-                print(f"⚠️ Error processing trade: {trade}")
-                print(f"❌ Exception: {e}")
+            if high_potential:
+                msg = format_trade(trade, bonus=is_bonus)
+                bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
+                print("✅ Telegram alert sent.")
+                matches += 1
+            else:
+                print("⏭️ Skipped – did not meet criteria.")
+        else:
+            print("⏭️ Skipped – already posted before.")
 
+    except Exception as e:
+        print(f"⚠️ Error processing trade: {trade}")
+        print(f"❌ Exception: {e}")
+        
                 if high_potential:
                     msg = format_trade(trade, bonus=is_bonus)
                     bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg)
