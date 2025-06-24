@@ -15,6 +15,8 @@ DB_FILE = "posted_trades.db"
 
 # --- DB Setup ---
 def init_db():
+    if os.path.exists(DB_FILE):
+        os.remove(DB_FILE)  # ❌ wipe old DB
     conn = sqlite3.connect(DB_FILE)
     conn.execute("CREATE TABLE IF NOT EXISTS trades (id TEXT PRIMARY KEY)")
     conn.commit()
@@ -72,17 +74,16 @@ def is_high_potential(trade, bonus_tickers):
         ticker = trade.get("Ticker", "").upper()
         filed_date = datetime.strptime(trade.get("Filed", ""), "%Y-%m-%dT%H:%M:%S")
 
-        big_trade = any(x in amount for x in [
-            "$1,001", "$1,001 - $15,000", "$15,001 - $50,000", "$50,001 - $100,000",
-            "$100,001 - $250,000", "$250,001 - $500,000", "$500,001 - $1,000,000", "Over $1,000,000"
-        ])
+        # Looser filter: ignore trades under $1,000
+        acceptable_amount = amount and not amount.startswith("$1,000 or less")
+
         good_sector = any(x in sector for x in ["tech", "energy", "defense", "semiconductor"])
         good_asset = "stock" in asset_type or asset_type == ""
         strong_ticker = ticker in ["MSFT", "AAPL", "GOOGL", "NVDA", "AMZN", "LMT", "XOM", "RTX"]
-        recent = filed_date >= datetime.utcnow() - timedelta(days=2)
+        recent = filed_date >= datetime.utcnow() - timedelta(days=7)
         is_bonus = ticker in bonus_tickers
 
-        return recent and big_trade and (good_sector or strong_ticker or is_bonus) and good_asset, is_bonus
+        return recent and acceptable_amount and (good_sector or strong_ticker or is_bonus) and good_asset, is_bonus
     except:
         return False, False
 
