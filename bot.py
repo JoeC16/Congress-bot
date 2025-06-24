@@ -8,7 +8,7 @@ from telegram import Bot
 # --- Config ---
 QUANT_API_KEY = os.getenv("QUANT_API_KEY")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_CHAT_ID = "1430731878"  # Send to your personal chat
 
 TRADING_ENDPOINT = "https://api.quiverquant.com/beta/bulk/congresstrading"
 CONTRACTS_ENDPOINT = "https://api.quiverquant.com/beta/live/govcontractsall"
