@@ -3,15 +3,11 @@ import re
 import requests
 import sqlite3
 from datetime import datetime, timedelta
-from telegram import Bot
 
 # --- Config ---
-QUANT_API_KEY = os.getenv("QUANT_API_KEY")  # from Render env vars
-TELEGRAM_TOKEN = "7526029013:AAHnrL0gKEuuGj_lL71aypUTa5Rdz-oxYRE"
-TELEGRAM_CHAT_ID = 1430731878
-
-TRADING_ENDPOINT = "https://api.quiverquant.com/beta/bulk/congresstrading"
-CONTRACTS_ENDPOINT = "https://api.quiverquant.com/beta/live/govcontractsall"
+QUANT_API_KEY = os.getenv("QUANT_API_KEY")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID", 0))
 DB_FILE = "posted_trades.db"
 
 def init_db():
@@ -20,9 +16,6 @@ def init_db():
         conn.execute("CREATE TABLE IF NOT EXISTS trades (id TEXT PRIMARY KEY)")
         conn.commit()
         conn.close()
-        print("📦 Database created.")
-    else:
-        print("✅ Database exists, skipping creation.")
 
 def is_new_trade(trade_id):
     conn = sqlite3.connect(DB_FILE)
@@ -33,28 +26,24 @@ def is_new_trade(trade_id):
         cur.execute("INSERT INTO trades (id) VALUES (?)", (trade_id,))
         conn.commit()
     conn.close()
-    print(f"🧠 Checked trade: {trade_id} | New: {not exists}")
     return not exists
-
-def strip_html_tags(text):
-    return re.sub('<[^<]+?>', '', text)
 
 def fetch_recent_trades():
     headers = {"Authorization": f"Bearer {QUANT_API_KEY}"}
-    r = requests.get(TRADING_ENDPOINT, headers=headers)
+    r = requests.get("https://api.quiverquant.com/beta/bulk/congresstrading", headers=headers)
     r.raise_for_status()
     return r.json()
 
 def fetch_recent_contracts():
     headers = {"Authorization": f"Bearer {QUANT_API_KEY}"}
-    r = requests.get(CONTRACTS_ENDPOINT, headers=headers)
+    r = requests.get("https://api.quiverquant.com/beta/live/govcontractsall", headers=headers)
     r.raise_for_status()
     return r.json()
 
 def get_recent_contract_tickers(days=7):
     data = fetch_recent_contracts()
     tickers = set()
-    cutoff = datetime.utcnow() - timedelta(days=7)
+    cutoff = datetime.utcnow() - timedelta(days=days)
     for item in data:
         try:
             contract_date = datetime.strptime(item["Date"], "%Y-%m-%dT%H:%M:%S")
@@ -72,10 +61,13 @@ def get_recent_contract_tickers(days=7):
 def score_trade(trade, bonus_tickers):
     try:
         amount = trade.get("Amount", "")
-        sector = trade.get("Sector", "").lower()
         asset_type = trade.get("AssetType", "").lower()
         ticker = trade.get("Ticker", "").upper()
+        transaction_type = trade.get("Transaction", "").lower()
         filed_raw = trade.get("Filed", "")
+
+        if "purchase" not in transaction_type:
+            return 0
 
         try:
             filed_date = datetime.strptime(filed_raw, "%Y-%m-%dT%H:%M:%S")
@@ -86,9 +78,7 @@ def score_trade(trade, bonus_tickers):
             return 0
 
         score = 0
-        if not amount.startswith("$1,000 or less"):
-            score += 1
-        if any(x in sector for x in ["tech", "energy", "defense", "semiconductor"]):
+        if amount and not amount.startswith("$1,000 or less"):
             score += 1
         if "stock" in asset_type or asset_type == "":
             score += 1
@@ -107,7 +97,7 @@ def format_trade(trade, bonus=False):
     ticker = trade.get("Ticker", "N/A")
     date = trade.get("Filed", "")[:10]
     amount = trade.get("Amount", "N/A")
-    link = f"https://www.quiverquant.com/congresstrading/{ticker.upper()}"
+    link = f"https://www.quiverquant.com/stock/{ticker.upper()}" if ticker != "N/A" else "https://www.quiverquant.com"
 
     msg = (
         f"🚨 <b>New Congressional Trade</b>\n"
@@ -126,9 +116,6 @@ def main():
     init_db()
 
     try:
-        bot = Bot(token=TELEGRAM_TOKEN)
-        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="✅ Bot ran and is checking trades...", parse_mode="HTML")
-
         trades = fetch_recent_trades()
         bonus_tickers = get_recent_contract_tickers()
 
@@ -141,16 +128,19 @@ def main():
 
         top = sorted(scored, key=lambda x: x["score"], reverse=True)[:5]
 
-        for i, trade in enumerate(top, 1):
+        for trade in top:
             trade_id = f"{trade.get('Name')}-{trade.get('Traded')}-{trade.get('Ticker')}"
             if is_new_trade(trade_id):
                 msg = format_trade(trade, trade.get("Ticker", "").upper() in bonus_tickers)
-                print(f"📤 Sending: {strip_html_tags(msg)}")
-                bot.send_message(
-                    chat_id=TELEGRAM_CHAT_ID,
-                    text=msg,
-                    parse_mode="HTML",
-                    disable_web_page_preview=True
+                print(f"📤 Sending: {msg}")
+                requests.post(
+                    f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                    data={
+                        "chat_id": TELEGRAM_CHAT_ID,
+                        "text": msg,
+                        "parse_mode": "HTML",
+                        "disable_web_page_preview": True
+                    }
                 )
                 print(f"✅ Sent to Telegram: {trade_id}")
             else:
