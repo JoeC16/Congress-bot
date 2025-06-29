@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from telegram import Bot
 
 # --- Config ---
-QUANT_API_KEY = os.getenv("QUANT_API_KEY")  # keep this in your Render environment
+QUANT_API_KEY = os.getenv("QUANT_API_KEY")  # Keep this in Render
 TELEGRAM_TOKEN = "7526029013:AAHnrL0gKEuuGj_lL71aypUTa5Rdz-oxYRE"
 TELEGRAM_CHAT_ID = 1430731878
 
@@ -118,16 +118,27 @@ def format_trade(trade, bonus=False):
         msg += "\n💥 <i>BONUS: This company received a recent government contract.</i>"
     return msg
 
+def send_direct_telegram_message():
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": "📡 Direct test via requests.post()",
+        "parse_mode": "HTML"
+    }
+    response = requests.post(url, json=payload)
+    print(f"📤 Direct send status: {response.status_code}")
+    print(f"📩 Direct send response: {response.text}")
+
 def main():
     print("🟢 Congress Bot Running...")
     init_db()
 
     try:
-        bot = Bot(token=TELEGRAM_TOKEN)
-        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="✅ Bot ran and this is a forced test message.", parse_mode="HTML")
+        # Direct test via requests.post()
+        send_direct_telegram_message()
 
-        # ✅ Confirm startup message
-        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="✅ Congress Bot started successfully.", parse_mode="HTML")
+        # Regular bot logic
+        bot = Bot(token=TELEGRAM_TOKEN)
 
         trades = fetch_recent_trades()
         bonus_tickers = get_recent_contract_tickers()
@@ -144,8 +155,8 @@ def main():
         for i, trade in enumerate(top, 1):
             trade_id = f"{trade.get('Name')}-{trade.get('Traded')}-{trade.get('Ticker')}"
             if is_new_trade(trade_id):
-                msg = format_trade(trade, trade.get("Ticker", "").upper() in bonus_tickers)
-                print(f"📤 Sending: {strip_html_tags(msg)}")
+                msg = strip_html_tags(format_trade(trade, trade.get("Ticker", "").upper() in bonus_tickers))
+                print(f"📤 Sending: {msg}")
                 bot.send_message(
                     chat_id=TELEGRAM_CHAT_ID,
                     text=msg,
