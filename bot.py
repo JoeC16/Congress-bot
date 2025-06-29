@@ -1,82 +1,104 @@
 import requests
-import time
+from datetime import datetime
 from telegram import Bot
-from telegram.constants import ParseMode
 
-# --- HARDCODED CREDENTIALS ---
+# --- Hardcoded Keys ---
 TELEGRAM_TOKEN = "7526029013:AAHnrL0gKEuuGj_lL71aypUTa5Rdz-oxYRE"
 TELEGRAM_CHAT_ID = 1430731878
 QUIVER_API_KEY = "7b4295f308c82b0f8594adb7765ade174b9b9884"
 
-# --- API ENDPOINTS ---
-TRADE_URL = "https://api.quiverquant.com/beta/live/congresstrading"
-CONTRACT_URL = "https://api.quiverquant.com/beta/live/govcontractsall"
+# --- API URLs (Fixed) ---
+TRADE_URL = "https://api.quiverquant.com/beta/live/congresstrading/"
+CONTRACT_URL = "https://api.quiverquant.com/beta/live/govcontracts/"
+
+# --- Headers ---
 HEADERS = {"x-api-key": QUIVER_API_KEY}
 
-# --- INIT TELEGRAM BOT ---
-bot = Bot(token=TELEGRAM_TOKEN)
-
-# --- FETCH QUANT DATA ---
-def fetch_data(url):
-    try:
-        r = requests.get(url, headers=HEADERS)
-        r.raise_for_status()
-        return r.json()
-    except Exception as e:
-        print(f"❌ ERROR fetching data: {e}")
-        return []
-
-congress_trades = fetch_data(TRADE_URL)
-gov_contracts = fetch_data(CONTRACT_URL)
-
-# --- GOV CONTRACT TICKERS ---
-contract_tickers = {c.get("Ticker", "").upper() for c in gov_contracts if c.get("Ticker")}
-
-# --- SCORING ---
-def score_trade(trade):
-    amount = trade.get("Amount", "")
-    ticker = trade.get("Ticker", "").upper()
+# --- Scoring Function ---
+def score_trade(trade, contract_tickers):
     score = 0
+    ticker = trade.get("Ticker", "").upper()
+    amount_range = trade.get("Range", "")
 
-    if "1,000,001" in amount:
-        score += 5
-    elif "500,001" in amount:
-        score += 4
-    elif "100,001" in amount:
-        score += 3
-    elif "15,001" in amount:
-        score += 2
-    elif "1,001" in amount:
+    if amount_range == "$1,001 - $15,000":
         score += 1
+    elif amount_range == "$15,001 - $50,000":
+        score += 2
+    elif amount_range == "$50,001 - $100,000":
+        score += 3
+    elif amount_range == "$100,001 - $250,000":
+        score += 4
+    elif amount_range == "$250,001 - $500,000":
+        score += 5
+    elif amount_range == "$500,001 - $1,000,000":
+        score += 6
+    elif amount_range == "$1,000,001 - $5,000,000":
+        score += 7
+    elif amount_range == "$5,000,001 - $25,000,000":
+        score += 8
+    elif amount_range == "$25,000,001 - $50,000,000":
+        score += 9
+    elif amount_range == "$50,000,000+":
+        score += 10
 
     if ticker in contract_tickers:
         score += 2
 
     return score
 
-# --- FORMAT MESSAGE ---
-def format_trade(trade, rank):
-    rep = trade.get("Representative", "Unknown")
-    date = trade.get("TransactionDate", "Unknown")
-    ticker = trade.get("Ticker", "Unknown")
-    amount = trade.get("Amount", "N/A")
-    amount_display = amount if amount != "N/A" else "Undisclosed"
-    gov_contract_note = "✅ Gov Contract" if ticker in contract_tickers else ""
-    link = f"https://www.quiverquant.com/stock/{ticker}"
+# --- Fetch Trades ---
+def fetch_trades():
+    res = requests.get(TRADE_URL, headers=HEADERS)
+    res.raise_for_status()
+    return res.json()
+
+# --- Fetch Gov Contracts ---
+def fetch_gov_contracts():
+    res = requests.get(CONTRACT_URL, headers=HEADERS)
+    res.raise_for_status()
+    data = res.json()
+    return {item["Ticker"].upper() for item in data if "Ticker" in item}
+
+# --- Format Trade Message ---
+def format_trade(trade, score, rank, gov_flag=False):
+    ticker = trade.get("Ticker", "N/A")
+    politician = trade.get("Representative", "N/A")
+    amount = trade.get("Range", "N/A")
+    date = trade.get("TransactionDate", "N/A")
+    link = f"https://www.quiverquant.com/stock/{ticker}/congresstrading"
+    gov_text = "\n🏛️ Gov Contract Detected!" if gov_flag else ""
 
     return (
-        f"🔻 <b>Top {rank} Congressional Trade</b>\n"
-        f"👤 {rep}\n"
-        f"📅 <b>Filed:</b> {date}\n"
-        f"💼 <b>Trade:</b> {amount_display} of <b>${ticker}</b>\n"
-        f"{gov_contract_note}\n"
-        f"🔗 <a href='{link}'>View on QuiverQuant</a>"
+        f"🔔 *Top {rank} Congressional Trade*\n"
+        f"👤 {politician}\n"
+        f"🗓️ Filed: {date}\n"
+        f"💰 Trade: {amount} of [${ticker}]({link})\n"
+        f"{gov_text}"
     )
 
-# --- SELECT & SEND TOP 5 ---
-ranked_trades = sorted(congress_trades, key=score_trade, reverse=True)[:5]
+# --- Main Bot Logic ---
+def send_top_trades():
+    bot = Bot(token=TELEGRAM_TOKEN)
+    try:
+        trades = fetch_trades()
+        contracts = fetch_gov_contracts()
 
-for i, trade in enumerate(ranked_trades, start=1):
-    msg = format_trade(trade, i)
-    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=msg, parse_mode=ParseMode.HTML)
-    time.sleep(1.2)
+        # Score and sort
+        ranked_trades = []
+        for trade in trades:
+            ticker = trade.get("Ticker", "").upper()
+            score = score_trade(trade, contracts)
+            ranked_trades.append((score, trade, ticker in contracts))
+
+        top_trades = sorted(ranked_trades, key=lambda x: x[0], reverse=True)[:5]
+
+        for idx, (score, trade, has_contract) in enumerate(top_trades, start=1):
+            message = format_trade(trade, score, idx, has_contract)
+            bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="Markdown", disable_web_page_preview=True)
+
+    except Exception as e:
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=f"⚠️ Bot Error: {e}")
+
+# --- Trigger Function ---
+if __name__ == "__main__":
+    send_top_trades()
