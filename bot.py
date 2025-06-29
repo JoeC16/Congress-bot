@@ -1,106 +1,118 @@
 import json
 import time
 import requests
-import os
+from datetime import datetime, timedelta
 
-# --- Hardcoded tokens ---
+# --- CONFIG (hardcoded) ---
 TELEGRAM_TOKEN = "7526029013:AAHnrL0gKEuuGj_lL71aypUTa5Rdz-oxYRE"
-TELEGRAM_CHAT_ID = "1430731878"
-QUIVER_API_KEY = "fCwaEjCyRUoaCglXcBLfubImyKZfQfdu4eOSyxvL"  # ✅ Replace with updated key if needed
-
-# --- API Endpoints ---
-TRADE_ENDPOINT = "https://api.quiverquant.com/beta/live/congresstrading"
-CONTRACTS_ENDPOINT = "https://api.quiverquant.com/beta/live/govcontracts"
+TELEGRAM_CHAT_ID = 1430731878
+QUIVER_API_KEY = "YOUR_QUIVER_API_KEY"  # Replace with your actual Quiver API key
+QUIVER_TRADE_URL = "https://api.quiverquant.com/beta/live/congresstrading"
+QUIVER_CONTRACT_URL = "https://api.quiverquant.com/beta/live/govcontractsall"
 HEADERS = {"x-api-key": QUIVER_API_KEY}
 
-# --- State File ---
-SENT_FILE = "sent_trades.json"
 
-def load_sent_ids():
-    if os.path.exists(SENT_FILE):
-        with open(SENT_FILE, "r") as f:
-            return set(json.load(f))
-    return set()
-
-def save_sent_ids(ids):
-    with open(SENT_FILE, "w") as f:
-        json.dump(list(ids), f)
-
-def send_message(text):
+# --- Functions ---
+def send_telegram(msg: str):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "text": text,
+        "text": msg,
         "parse_mode": "HTML"
     }
-    try:
-        response = requests.post(url, data=payload)
-        if response.status_code != 200:
-            print(f"❌ Telegram error: {response.text}")
-    except Exception as e:
-        print(f"❌ Telegram exception: {e}")
+    requests.post(url, data=payload)
 
-def get_recent_contracts():
-    try:
-        r = requests.get(CONTRACTS_ENDPOINT, headers=HEADERS)
-        contracts = r.json()
-        recent = {c.get("Company", "") for c in contracts if c.get("Date", "") >= "2025-06-01"}
-        return recent
-    except Exception as e:
-        print(f"⚠️ Contract API error: {e}")
-        return set()
+
+def fetch_trades():
+    r = requests.get(QUIVER_TRADE_URL, headers=HEADERS)
+    r.raise_for_status()
+    return r.json()
+
+
+def fetch_contract_tickers(days=7):
+    r = requests.get(QUIVER_CONTRACT_URL, headers=HEADERS)
+    r.raise_for_status()
+    data = r.json()
+    tickers = set()
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    for item in data:
+        try:
+            contract_date = datetime.strptime(item["Date"], "%Y-%m-%dT%H:%M:%S")
+        except:
+            continue
+        if contract_date >= cutoff and item.get("Ticker"):
+            tickers.add(item["Ticker"].upper())
+    return tickers
+
+
+def score_trade(trade, contract_tickers):
+    score = 0
+    ticker = trade.get("Ticker", "").upper()
+    amount = trade.get("Amount", "")
+    sector = trade.get("Sector", "").lower()
+    asset_type = trade.get("AssetType", "").lower()
+
+    if amount and not amount.startswith("$1,000 or less"):
+        score += 1
+    if any(x in sector for x in ["tech", "semiconductor", "energy", "defense"]):
+        score += 1
+    if ticker in ["NVDA", "MSFT", "AAPL", "LMT", "AMD", "AVGO", "XOM", "AMZN"]:
+        score += 1
+    if "stock" in asset_type or asset_type == "":
+        score += 1
+    if ticker in contract_tickers:
+        score += 2
+
+    return score
+
+
+def format_trade(trade, contract_match=False):
+    rep = trade.get("Representative", "Unknown")
+    ticker = trade.get("Ticker", "N/A").upper()
+    date = trade.get("ReportDate", "")[:10]
+    amount = trade.get("Amount", "N/A")
+    link = f"https://www.quiverquant.com/stock/{ticker}"
+    msg = (
+        f"🚨 <b>New Congressional Trade</b>\n"
+        f"👤 {rep}\n"
+        f"📅 <b>Filed:</b> {date}\n"
+        f"💼 <b>Trade:</b> {amount} of <b>${ticker}</b>\n"
+        f"🔗 <a href='{link}'>View on QuiverQuant</a>"
+    )
+    if contract_match:
+        msg += "\n💥 <i>This company received a recent government contract.</i>"
+    return msg
+
 
 def main():
-    send_message("✅ Bot started and is scanning for trades...")
-
-    sent_ids = sent()
-
     try:
-        r = requests.get(TRADE_ENDPOINT, headers=HEADERS)
-        trades = r.json()
+        print("📡 Scanning...")
+        trades = fetch_trades()
+        contract_tickers = fetch_contract_tickers()
+
+        filtered = []
+        for t in trades:
+            if t.get("Transaction", "").lower() != "purchase":
+                continue
+            score = score_trade(t, contract_tickers)
+            if score > 0:
+                t["score"] = score
+                filtered.append(t)
+
+        top5 = sorted(filtered, key=lambda x: x["score"], reverse=True)[:5]
+
+        for t in top5:
+            ticker = t.get("Ticker", "").upper()
+            has_contract = ticker in contract_tickers
+            message = format_trade(t, contract_match=has_contract)
+            send_telegram(message)
+            time.sleep(1.5)
+
+        print(f"✅ Sent {len(top5)} trade alerts.")
+
     except Exception as e:
-        print(f"❌ Trade API error: {e}")
-        return
-
-    recent_contracts = get_recent_contracts()
-
-    for trade in trades:
-        if not isinstance(trade, dict):
-            continue
-
-        rep = trade.get("Representative", "Unknown")
-        ticker = trade.get("Ticker", "Unknown")
-        date = trade.get("ReportDate", "Unknown")
-        transaction = trade.get("Transaction", "").lower()
-        amount = trade.get("Amount", "N/A")
-
-        if "purchase" not in transaction:
-            continue
-
-        trade_id = f"{rep}-{ticker}-{date}"
-        if trade_id in sent_ids:
-            continue
-
-        contract_flag = ""
-        if ticker and any(ticker.lower() in company.lower() for company in recent_contracts):
-            contract_flag = "\n🏛️ <b>Recent Gov Contract Awarded</b>"
-
-        url = f"https://www.quiverquant.com/stock/{ticker.upper()}"
-
-        message = (
-            f"🚨 <b>New Congressional Trade</b>\n"
-            f"👤 {rep}\n"
-            f"📅 <b>Filed:</b> {date}\n"
-            f"💼 <b>Trade:</b> {amount} of <b>${ticker}</b>\n"
-            f"🔗 <a href='{url}'>View on QuiverQuant</a>{contract_flag}"
-        )
-
-        send_message(message)
-        print(f"✅ Sent to Telegram: {trade_id}")
-        sent_ids.add(trade_id)
-        time.sleep(1)
-
-    save_sent_ids(sent_ids)
+        print(f"❌ ERROR: {e}")
+        send_telegram("❌ Bot failed to complete scan.")
 
 if __name__ == "__main__":
     main()
