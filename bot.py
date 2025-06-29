@@ -53,7 +53,7 @@ def get_recent_contracts():
 def main():
     send_message("✅ Bot started and is scanning for trades...")
 
-    sent_ids = load_sent_ids()
+    sent_ids = sent()
 
     try:
         r = requests.get(TRADE_ENDPOINT, headers=HEADERS)
