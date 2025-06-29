@@ -124,7 +124,9 @@ def main():
 
     try:
         bot = Bot(token=TELEGRAM_TOKEN)
-        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="👋 Bot is running.", parse_mode=None)
+
+        # ✅ Confirm startup message
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="✅ Congress Bot started successfully.", parse_mode="HTML")
 
         trades = fetch_recent_trades()
         bonus_tickers = get_recent_contract_tickers()
@@ -141,12 +143,12 @@ def main():
         for i, trade in enumerate(top, 1):
             trade_id = f"{trade.get('Name')}-{trade.get('Traded')}-{trade.get('Ticker')}"
             if is_new_trade(trade_id):
-                msg = strip_html_tags(format_trade(trade, trade.get("Ticker", "").upper() in bonus_tickers))
-                print(f"📤 Sending: {msg}")
+                msg = format_trade(trade, trade.get("Ticker", "").upper() in bonus_tickers)
+                print(f"📤 Sending: {strip_html_tags(msg)}")
                 bot.send_message(
                     chat_id=TELEGRAM_CHAT_ID,
                     text=msg,
-                    parse_mode=None,
+                    parse_mode="HTML",
                     disable_web_page_preview=True
                 )
                 print(f"✅ Sent to Telegram: {trade_id}")
