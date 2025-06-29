@@ -4,9 +4,9 @@ import requests
 import os
 
 # --- Hardcoded tokens ---
-TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
-TELEGRAM_CHAT_ID = "YOUR_TELEGRAM_CHAT_ID"
-QUIVER_API_KEY = "YOUR_QUIVER_API_KEY"
+TELEGRAM_TOKEN = "7526029013:AAHnrL0gKEuuGj_lL71aypUTa5Rdz-oxYRE"
+TELEGRAM_CHAT_ID = "1430731878"
+QUIVER_API_KEY = "fCwaEjCyRUoaCglXcBLfubImyKZfQfdu4eOSyxvL"  # ✅ Replace with updated key if needed
 
 # --- API Endpoints ---
 TRADE_ENDPOINT = "https://api.quiverquant.com/beta/live/congresstrading"
@@ -66,7 +66,7 @@ def main():
 
     for trade in trades:
         if not isinstance(trade, dict):
-            continue  # skip malformed data
+            continue
 
         rep = trade.get("Representative", "Unknown")
         ticker = trade.get("Ticker", "Unknown")
