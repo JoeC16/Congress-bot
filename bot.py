@@ -124,6 +124,7 @@ def main():
 
     try:
         bot = Bot(token=TELEGRAM_TOKEN)
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="✅ Bot ran and this is a forced test message.", parse_mode="HTML")
 
         # ✅ Confirm startup message
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="✅ Congress Bot started successfully.", parse_mode="HTML")
