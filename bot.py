@@ -6,9 +6,9 @@ from datetime import datetime, timedelta
 from telegram import Bot
 
 # --- Config ---
-QUANT_API_KEY = os.getenv("QUANT_API_KEY")
-TELEGRAM_TOKEN = "7888906888:AAFimQPh13dJqTm_ztbVndolUHbmHxOBhdE"  # ✅ New bot token
-TELEGRAM_CHAT_ID = 1430731878  # ✅ Your personal chat ID
+QUANT_API_KEY = os.getenv("QUANT_API_KEY")  # keep this in your Render environment
+TELEGRAM_TOKEN = "7526029013:AAHnrL0gKEuuGj_lL71aypUTa5Rdz-oxYRE"
+TELEGRAM_CHAT_ID = 1430731878
 
 TRADING_ENDPOINT = "https://api.quiverquant.com/beta/bulk/congresstrading"
 CONTRACTS_ENDPOINT = "https://api.quiverquant.com/beta/live/govcontractsall"
@@ -51,7 +51,7 @@ def fetch_recent_contracts():
 def get_recent_contract_tickers(days=7):
     data = fetch_recent_contracts()
     tickers = set()
-    cutoff = datetime.utcnow() - timedelta(days=days)
+    cutoff = datetime.utcnow() - timedelta(days=7)
     for item in data:
         try:
             contract_date = datetime.strptime(item["Date"], "%Y-%m-%dT%H:%M:%S")
