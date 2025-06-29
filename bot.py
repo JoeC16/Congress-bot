@@ -1,18 +1,18 @@
-import json
 import time
 import requests
 
 # --- Hardcoded credentials ---
-TELEGRAM_TOKEN = "6874043235:AAGzbsM-jWUbZYN7nG1xOsOCD9-3_4D5C0U"
-TELEGRAM_CHAT_ID = "-1002092198009"
-QUIVER_API_KEY = "q4b0x0qf9f1b4xrn9yzv"
+TELEGRAM_TOKEN = "7526029013:AAHnrL0gKEuuGj_lL71aypUTa5Rdz-oxYRE"
+TELEGRAM_CHAT_ID = 1430731878
+QUIVER_API_KEY = "e3fbd99b6ff08c6c73ba3b507942db16"
 
+# --- API setup ---
+HEADERS = {"Authorization": f"Bearer {QUIVER_API_KEY}"}
 TRADING_ENDPOINT = "https://api.quiverquant.com/beta/bulk/congresstrading"
 CONTRACTS_ENDPOINT = "https://api.quiverquant.com/beta/live/govcontractsall"
-HEADERS = {"x-api-key": QUIVER_API_KEY}
-
 MAX_TRADES = 5
 
+# --- Send Telegram message ---
 def send_message(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {
@@ -20,89 +20,81 @@ def send_message(text):
         "text": text,
         "parse_mode": "HTML"
     }
-    try:
-        requests.post(url, data=payload)
-    except Exception as e:
-        print(f"Failed to send message: {e}")
+    requests.post(url, data=payload)
 
-def get_gov_contract_tickers():
-    try:
-        r = requests.get(CONTRACTS_ENDPOINT, headers=HEADERS)
-        r.raise_for_status()
-        return set(entry["Ticker"] for entry in r.json() if "Ticker" in entry)
-    except Exception as e:
-        print(f"❌ Contract API error: {e}")
-        send_message("❌ Bot failed to complete scan.")
-        return set()
+# --- Load contract tickers for bonus scoring ---
+def fetch_contracts():
+    r = requests.get(CONTRACTS_ENDPOINT, headers=HEADERS)
+    r.raise_for_status()
+    return {c["Ticker"] for c in r.json() if "Ticker" in c}
 
+# --- Load all recent trades ---
 def fetch_trades():
-    try:
-        r = requests.get(TRADING_ENDPOINT, headers=HEADERS)
-        r.raise_for_status()
-        return r.json()
-    except Exception as e:
-        print(f"❌ Trade API error: {e}")
-        send_message("❌ Bot failed to complete scan.")
-        return []
+    r = requests.get(TRADING_ENDPOINT, headers=HEADERS)
+    r.raise_for_status()
+    return r.json()
 
-def score_trade(trade, contract_tickers):
+# --- Score trade based on logic ---
+def score_trade(t, contract_bonus_set):
     score = 0
-    ticker = trade.get("Ticker", "").upper()
-    amount_raw = trade.get("Amount", "").replace("$", "").replace(",", "")
-    amount_score = 0
+    amount_str = t.get("Amount", "").replace("$", "").replace(",", "")
     try:
-        amount = float(amount_raw)
+        amount = float(amount_str)
         if amount >= 500000:
-            amount_score = 3
+            score += 3
         elif amount >= 100000:
-            amount_score = 2
+            score += 2
         elif amount >= 15000:
-            amount_score = 1
+            score += 1
     except:
         pass
-    score += amount_score
 
+    ticker = t.get("Ticker", "").upper()
     if ticker in {"NVDA", "MSFT", "AAPL", "TSLA", "LMT", "PLTR"}:
         score += 2
-    if ticker in contract_tickers:
+    if ticker in contract_bonus_set:
         score += 3
 
     return score
 
+# --- Main logic ---
 def main():
     send_message("✅ Bot started and is scanning for trades...")
 
-    trades = fetch_trades()
-    if not trades:
+    try:
+        contracts = fetch_contracts()
+        trades = fetch_trades()
+    except Exception as e:
+        send_message("❌ Bot failed to complete scan.")
         return
-
-    contract_tickers = get_gov_contract_tickers()
 
     scored_trades = []
     for trade in trades:
         if trade.get("Transaction", "").lower() != "purchase":
             continue
-        trade["score"] = score_trade(trade, contract_tickers)
+        trade["score"] = score_trade(trade, contracts)
         scored_trades.append(trade)
 
     top_trades = sorted(scored_trades, key=lambda x: x["score"], reverse=True)[:MAX_TRADES]
 
     for trade in top_trades:
         rep = trade.get("Representative", "Unknown")
-        ticker = trade.get("Ticker", "Unknown")
+        ticker = trade.get("Ticker", "N/A").upper()
         date = trade.get("ReportDate", "Unknown")
         amount = trade.get("Amount", "N/A")
         url = f"https://www.quiverquant.com/stock/{ticker}"
 
+        contract_flag = " 💥 GOV CONTRACT" if ticker in contracts else ""
         message = (
-            f"🚨 <b>New Congressional Trade</b>\n"
+            f"🚨 <b>New Congressional Trade</b>{contract_flag}\n"
             f"👤 {rep}\n"
             f"📅 <b>Filed:</b> {date}\n"
             f"💼 <b>Trade:</b> {amount} of <b>${ticker}</b>\n"
             f"🔗 <a href='{url}'>View on QuiverQuant</a>"
         )
+
         send_message(message)
-        time.sleep(1)
+        time.sleep(1.1)
 
 if __name__ == "__main__":
     main()
