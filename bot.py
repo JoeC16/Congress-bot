@@ -3,9 +3,10 @@ import re
 import requests
 import sqlite3
 from datetime import datetime, timedelta
+from telegram import Bot
 
 # --- Config ---
-QUANT_API_KEY = os.getenv("QUANT_API_KEY")
+QUANT_API_KEY = os.getenv("QUANT_API_KEY")  # from Render env vars
 TELEGRAM_TOKEN = "7526029013:AAHnrL0gKEuuGj_lL71aypUTa5Rdz-oxYRE"
 TELEGRAM_CHAT_ID = 1430731878
 
@@ -14,12 +15,14 @@ CONTRACTS_ENDPOINT = "https://api.quiverquant.com/beta/live/govcontractsall"
 DB_FILE = "posted_trades.db"
 
 def init_db():
-    if os.path.exists(DB_FILE):
-        os.remove(DB_FILE)
-    conn = sqlite3.connect(DB_FILE)
-    conn.execute("CREATE TABLE IF NOT EXISTS trades (id TEXT PRIMARY KEY)")
-    conn.commit()
-    conn.close()
+    if not os.path.exists(DB_FILE):
+        conn = sqlite3.connect(DB_FILE)
+        conn.execute("CREATE TABLE IF NOT EXISTS trades (id TEXT PRIMARY KEY)")
+        conn.commit()
+        conn.close()
+        print("📦 Database created.")
+    else:
+        print("✅ Database exists, skipping creation.")
 
 def is_new_trade(trade_id):
     conn = sqlite3.connect(DB_FILE)
@@ -30,7 +33,11 @@ def is_new_trade(trade_id):
         cur.execute("INSERT INTO trades (id) VALUES (?)", (trade_id,))
         conn.commit()
     conn.close()
+    print(f"🧠 Checked trade: {trade_id} | New: {not exists}")
     return not exists
+
+def strip_html_tags(text):
+    return re.sub('<[^<]+?>', '', text)
 
 def fetch_recent_trades():
     headers = {"Authorization": f"Bearer {QUANT_API_KEY}"}
@@ -114,24 +121,14 @@ def format_trade(trade, bonus=False):
         msg += "\n💥 <i>BONUS: This company received a recent government contract.</i>"
     return msg
 
-def send_telegram_message(msg):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": msg,
-        "parse_mode": "HTML",
-        "disable_web_page_preview": True
-    }
-    r = requests.post(url, json=payload)
-    print(f"📤 Status: {r.status_code} | Response: {r.text}")
-
 def main():
-    print("🟢 Bot is live and scanning...")
+    print("🟢 Congress Bot Running...")
     init_db()
 
-    send_telegram_message("✅ Bot started and is scanning for trades...")
-
     try:
+        bot = Bot(token=TELEGRAM_TOKEN)
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="✅ Bot ran and is checking trades...", parse_mode="HTML")
+
         trades = fetch_recent_trades()
         bonus_tickers = get_recent_contract_tickers()
 
@@ -144,12 +141,18 @@ def main():
 
         top = sorted(scored, key=lambda x: x["score"], reverse=True)[:5]
 
-        for trade in top:
+        for i, trade in enumerate(top, 1):
             trade_id = f"{trade.get('Name')}-{trade.get('Traded')}-{trade.get('Ticker')}"
             if is_new_trade(trade_id):
                 msg = format_trade(trade, trade.get("Ticker", "").upper() in bonus_tickers)
-                print(f"📢 Sending trade alert:\n{msg}\n")
-                send_telegram_message(msg)
+                print(f"📤 Sending: {strip_html_tags(msg)}")
+                bot.send_message(
+                    chat_id=TELEGRAM_CHAT_ID,
+                    text=msg,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True
+                )
+                print(f"✅ Sent to Telegram: {trade_id}")
             else:
                 print(f"⏭️ Already sent: {trade_id}")
 
@@ -158,7 +161,6 @@ def main():
 
     except Exception as e:
         print(f"❌ ERROR: {e}")
-        send_telegram_message(f"❌ Bot Error: {e}")
 
 if __name__ == "__main__":
     main()
